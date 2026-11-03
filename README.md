@@ -1,6 +1,6 @@
 # Proyecto 1 — Rover autónomo
 
-Implementación reproducible de búsqueda de rutas, metaheurísticas y satisfacción de restricciones (CSP). El proyecto selecciona CSP como representación simbólica. Los ejemplos PDDL y demás documentos del material de curso son referencias y no se distribuyen con este repositorio. No se implementa el apartado opcional de reglas.
+Implementación reproducible de búsqueda de rutas, metaheurísticas y satisfacción de restricciones (CSP). El proyecto selecciona CSP como representación simbólica.
 
 ## Requisitos
 
