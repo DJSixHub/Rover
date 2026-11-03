@@ -1,0 +1,143 @@
+\documentclass[10pt,spanish]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.3em}
+\setlist{nosep,leftmargin=*}
+\renewcommand{\arraystretch}{1.03}
+
+\title{Rover autónomo: búsqueda, metaheurísticas y satisfacción de restricciones}
+\author{Proyecto 1 --- Elementos de Inteligencia Artificial}
+\date{Curso 2026--2027}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Se implementa un rover sobre un grafo reproducible con terrenos ponderados, puntos de interés (POI), batería, memoria y ventanas de comunicación. La navegación compara BFS, Dijkstra y dos heurísticas de A*. El orden de visita se optimiza con ascenso de colinas y recocido simulado. La secuencia de misión se construye con un CSP de orden, lotes y ventanas temporales, resuelto con forward checking, MRV y LCV. Un simulador Tkinter permite observar los algoritmos y ejecutar los planes paso a paso. Los resultados se reportan sobre 20 semillas y muestran ventajas dependientes de la instancia, no una superioridad universal.
+\end{abstract}
+
+\section{Problema y entorno}
+El mapa es un grafo no dirigido y conexo generado por semilla. Cada nodo representa una localización; las aristas tienen costo según terreno: llano $1.0$, roca $1.7$, arena $2.4$ y duna $3.1$. Una instancia fija base, zona de comunicación, POI, coordenadas y ventanas. La misión requiere visitar todos los POI, tomar y analizar sus muestras, y transmitir cada una dentro de una ventana. Se limita la batería a 15 unidades (representadas en décimas), la memoria a dos muestras y el tiempo total a 200 unidades. La recarga se permite en la base y en la zona de comunicación, también si la ruta pasa por una estación.
+
+Las ventanas son intervalos $[8+20k,20+20k]$, para $k=0,\ldots,9$. El rover puede esperar en comunicación hasta la apertura; todas las transmisiones de un lote deben concluir dentro de una misma ventana. Cada movimiento consume el costo de sus aristas. Tomar, analizar, transmitir y recargar tienen duraciones explícitas. Se omiten obstáculos dinámicos y fallos de equipo para concentrar el análisis en los tres módulos obligatorios.
+
+\section{Métodos}
+\textbf{Búsqueda de rutas.} BFS minimiza el número de aristas y calcula el costo ponderado de la ruta que encuentra; no garantiza costo mínimo cuando varía el terreno. Dijkstra minimiza costo acumulado. A* se evaluó con $h=0$ y con una cota euclídea escalada por $\alpha=\min_{(u,v)} c(u,v)/d(u,v)$. La desigualdad triangular y $\alpha d(u,v)\leq c(u,v)$ hacen que la heurística sea consistente y admisible. Cada método expande un nodo por evento, lo que permite animar su frontera.
+
+\textbf{Metaheurísticas.} Una solución es una permutación de POI; el vecino de ascenso de colinas intercambia dos posiciones y el de recocido invierte un segmento. El costo suma rutas mínimas y retorno a comunicación cada dos muestras, según la capacidad de memoria. El ascenso acepta solo mejoras; el recocido acepta empeoramientos con probabilidad $\exp(-\Delta/T)$ y enfría linealmente. Ambos parten de órdenes aleatorios reproducibles y usan 200 evaluaciones por corrida. Vecino más cercano es la línea base. Para 12 POI ya existen $12!=479\,001\,600$ órdenes antes de considerar decisiones de comunicación, batería y tiempo: el presupuesto de búsqueda local acota evaluaciones; no se afirma que el exacto sea inviable para los tamaños pequeños medidos. El CSP posterior valida el itinerario contra los recursos reales.
+
+\textbf{CSP seleccionado.} Para cada posición $i$ del recorrido se define $X_i=(P_i,C_i,W_i)$: $P_i$ el POI asignado; $C_i$ indica si se cierra el lote y se comunica; $W_i$ es el índice de ventana, con dominio $-1$ si no se cierra. Los dominios son finitos: POI todavía no asignados, decisión de cierre y ventanas disponibles. La instancia impone:
+\begin{itemize}
+  \item \textit{AllDifferent} sobre los $P_i$: cada POI se visita una vez.
+  \item \textit{Memoria}: no se acumulan más de dos muestras sin cerrar y transmitir el lote; el último puesto cierra necesariamente.
+  \item \textit{Batería}: cada ruta debe ser energéticamente factible. En estaciones intermedias se permite recargar; la batería se restablece al cerrar un lote en comunicación.
+  \item \textit{Precedencia}: en cada visita se ejecuta \texttt{take} antes de \texttt{analyze}; la transmisión ocurre solo después del análisis y en la zona.
+  \item \textit{Ventana y plazo}: si la llegada al final del lote es $t_a$, el inicio es $t_s=\max(t_a,\text{apertura}(W_i))$ y $t_s+\text{servicio}\leq\text{cierre}(W_i)$; el fin de misión no supera 200.
+\end{itemize}
+La propagación forward checking elimina POI ya usados y prueba si la extensión del prefijo conserva batería, memoria, ventanas y plazo. MRV selecciona el puesto con menor dominio de POI factibles (desempate por posición); LCV ordena los valores por el número de extensiones viables y el costo incremental. Se elimina una ventana posterior dominada cuando la primera ventana factible solo evita espera adicional. El orden de una metaheurística puede proponerse como preferencia de valores; el CSP aún puede rechazarlo y buscar otra asignación factible. Así se integra la optimización con la validación simbólica. Este es un CSP de primera solución factible; la minimización del orden corresponde al módulo metaheurístico.
+
+\section{Protocolo experimental}
+Se compararon mapas de $n\in\{8,12,16\}$ con semillas 10--29 (20 mapas por tamaño). La búsqueda usa cinco POI por mapa. Al ser determinista, costo y expansiones se registran una vez por mapa; el tiempo se mide tres veces sobre el mismo mapa. La tabla informa media $\pm$ desviación estándar poblacional entre mapas, después de promediar las mediciones temporales de cada uno.
+
+La comparación metaheurística usa 6 POI para $n=8,12$ y 8 para $n=16$, las mismas 20 semillas y ocho corridas aleatorias por mapa (160 por tamaño y algoritmo). Hill climbing y recocido reciben idénticas 200 evaluaciones y semillas de corrida emparejadas. La mejora porcentual se calcula respecto a vecino más cercano de la misma instancia; las medias y desviaciones de estos dos métodos agregan las corridas, mientras la línea base agrega los 20 mapas.
+
+Para el CSP general se evaluaron 4, 6 y 8 POI en los tres tamaños, una solución determinista por mapa. Se comparó orden cronológico con forward checking frente a MRV/LCV con el mismo forward checking. Para exponer el efecto de la propagación y el retroceso se añadió un conjunto fijo de estrés: 20 mapas de 8 nodos y 5 POI, semillas 0--19, batería 9.0, memoria de dos muestras, plazo 25 y ventanas $[5+15k,11+15k]$. Ambas estrategias reciben las mismas instancias y parámetros. Se informa la tasa de factibilidad sobre los 20 mapas; las demás métricas se promedian sobre los mapas factibles. El protocolo se reproduce con los comandos documentados en el README.
+
+\section{Resultados}
+\begin{table}[H]
+\centering
+\caption{Búsqueda de rutas: media $\pm$ desviación estándar.}
+\small
+\begin{tabular}{clrrr}
+\toprule
+$n$ & Método & Tiempo (ms) & Expandidos & Costo \\
+\midrule
+8  & BFS & $0.0078\pm0.0021$ & $5.50\pm1.75$ & $2.970\pm1.397$ \\
+8  & Dijkstra & $0.0132\pm0.0039$ & $5.60\pm1.88$ & $2.430\pm0.899$ \\
+8  & A* ($h=0$) & $0.0121\pm0.0037$ & $5.60\pm1.88$ & $2.430\pm0.899$ \\
+8  & A* (euclídea) & $0.0165\pm0.0044$ & $4.40\pm1.71$ & $2.430\pm0.899$ \\
+\midrule
+12 & BFS & $0.0105\pm0.0046$ & $6.75\pm2.93$ & $2.490\pm0.982$ \\
+12 & Dijkstra & $0.0181\pm0.0059$ & $7.10\pm2.83$ & $2.135\pm0.699$ \\
+12 & A* ($h=0$) & $0.0297\pm0.0482$ & $7.10\pm2.83$ & $2.135\pm0.699$ \\
+12 & A* (euclídea) & $0.0248\pm0.0054$ & $4.85\pm1.93$ & $2.135\pm0.699$ \\
+\midrule
+16 & BFS & $0.0124\pm0.0050$ & $9.75\pm5.16$ & $2.835\pm1.375$ \\
+16 & Dijkstra & $0.0247\pm0.0110$ & $9.20\pm4.61$ & $2.230\pm0.744$ \\
+16 & A* ($h=0$) & $0.0230\pm0.0100$ & $9.20\pm4.61$ & $2.230\pm0.744$ \\
+16 & A* (euclídea) & $0.0376\pm0.0139$ & $6.40\pm4.16$ & $2.230\pm0.744$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Metaheurísticas: costo y mejora porcentual frente al vecino más cercano.}
+\small
+\begin{tabular}{clrrrr}
+\toprule
+$n$ & Método & Vecino cercano & Costo método & Mejora (\%) & Tiempo (ms) \\
+\midrule
+8 & Colinas & $15.320\pm3.263$ & $15.256\pm2.803$ & $-0.34\pm7.24$ & $1.526\pm0.307$ \\
+8 & Recocido & $15.320\pm3.263$ & $14.779\pm2.745$ & $2.94\pm5.08$ & $1.634\pm0.294$ \\
+12 & Colinas & $15.565\pm2.235$ & $15.007\pm1.937$ & $3.23\pm5.72$ & $3.662\pm0.924$ \\
+12 & Recocido & $15.565\pm2.235$ & $14.700\pm1.866$ & $5.23\pm4.58$ & $3.836\pm0.996$ \\
+16 & Colinas & $20.175\pm1.576$ & $19.521\pm1.643$ & $3.20\pm4.09$ & $7.621\pm1.493$ \\
+16 & Recocido & $20.175\pm1.576$ & $19.218\pm1.569$ & $4.71\pm3.44$ & $7.867\pm1.631$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{CSP: comparación de estrategias de selección. Una solución por mapa.}
+\scriptsize
+\begin{tabular}{clrrrrr}
+\toprule
+$n$ & Estrategia & Valores probados & Retrocesos & Costo ruta & Tiempo misión & Cómputo (ms) \\
+\midrule
+8 & Cronológico+FC & $4.00\pm0.00$ & $0.00\pm0.00$ & $11.925\pm3.668$ & $19.89\pm4.78$ & $1.202\pm0.183$ \\
+8 & MRV/LCV+FC & $4.00\pm0.00$ & $0.00\pm0.00$ & $13.985\pm4.725$ & $28.27\pm4.51$ & $3.248\pm0.509$ \\
+12 & Cronológico+FC & $6.00\pm0.00$ & $0.00\pm0.00$ & $15.915\pm2.234$ & $29.92\pm1.39$ & $6.594\pm1.258$ \\
+12 & MRV/LCV+FC & $6.00\pm0.00$ & $0.00\pm0.00$ & $19.320\pm3.038$ & $39.53\pm5.68$ & $12.481\pm3.466$ \\
+16 & Cronológico+FC & $8.00\pm0.00$ & $0.00\pm0.00$ & $21.270\pm1.782$ & $37.20\pm0.97$ & $10.336\pm2.255$ \\
+16 & MRV/LCV+FC & $8.00\pm0.00$ & $0.00\pm0.00$ & $26.680\pm2.860$ & $52.95\pm4.38$ & $28.617\pm7.141$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{CSP con restricciones ajustadas. Métricas sobre 17 mapas factibles de 20.}
+\scriptsize
+\begin{tabular}{clrrrrr}
+\toprule
+Estrategia & Factibles & Valores probados & Retrocesos & Costo ruta & Misión & Cómputo (ms) \\
+\midrule
+Cronológico+FC & 17/20 & $52.00\pm87.42$ & $47.00\pm87.42$ & $12.718\pm1.393$ & $21.66\pm0.21$ & $24.166\pm48.977$ \\
+MRV/LCV+FC & 17/20 & $388.41\pm163.76$ & $383.41\pm163.76$ & $12.594\pm1.096$ & $21.65\pm0.21$ & $309.009\pm150.980$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Análisis y desafíos}
+Dijkstra y las dos variantes de A* producen el mismo costo en los mapas medidos; $h=0$ reproduce Dijkstra. La heurística euclídea reduce expansiones medias, pero no reduce el tiempo: calcular y evaluar la cota agrega trabajo en grafos tan pequeños. BFS es rápido en esta escala, aunque sus rutas son más caras en promedio. No se observa una diferencia de costo entre los métodos ponderados que permita preferir uno por calidad de ruta.
+
+El recocido simulado obtuvo menor costo medio que vecino más cercano para los tres tamaños, pero las desviaciones de mejora (3.44--5.08 puntos porcentuales) muestran variación entre semillas y corridas. Ascenso de colinas mejora poco y su resultado medio empeora levemente en $n=8$. Por tanto, la evidencia favorece al recocido como candidato en estas instancias, no como ganador garantizado.
+
+En los mapas CSP generales ambas estrategias encuentran solución sin retrocesos: esos casos sirven como línea base fácil, pero no bastan para estudiar el retroceso. En el conjunto restringido, ambas encuentran solución en 17 de 20 mapas y requieren retroceder en los factibles. La estrategia cronológica prueba $52.00\pm87.42$ valores, frente a $388.41\pm163.76$ con MRV/LCV; en este conjunto, las heurísticas no reducen el trabajo ni el tiempo de cómputo. Los costos y duraciones de misión son similares. Por tanto, los resultados confirman que el solver maneja conflictos y revelan que esta combinación de heurísticas no ayuda en estas instancias; no se generaliza a CSP mayores o con otra estructura. La búsqueda exacta se limita a 12 POI por el crecimiento de permutaciones, lotes y dominios temporales.
+
+\section{Implementación, visualización y conclusiones}
+\texttt{rover.py} implementa el generador, búsquedas, metaheurísticas, CSP y experimentos. \texttt{simulador.py} usa Tkinter, sin dependencias externas, para colorear frontera y expansiones, dibujar el orden candidato y animar el recorrido. Permite paso a paso o reproducción continua; para CSP visualiza asignaciones y podas y reproduce las acciones mostrando batería, memoria y transmisiones. Once pruebas automatizadas cubren generación, rutas, presupuesto estocástico, propagación, orden preferido, retroceso bajo restricciones ajustadas, límite de POI y factibilidad de planes.
+
+La solución integra búsqueda ponderada con orden de visita metaheurístico y CSP con capacidad de recursos, ventanas y precedencias. Los experimentos se ejecutaron con Python 3.12.2, semillas declaradas y resúmenes de media y dispersión. Como mejoras se plantean ampliar los casos restringidos a más tamaños, comparar más semillas y estudiar propagaciones y heurísticas alternativas. El proyecto selecciona CSP como su único módulo de representación simbólica.
+
+\end{document}

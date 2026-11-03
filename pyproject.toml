@@ -1,0 +1,6 @@
+[project]
+name = "proyecto-rover"
+version = "1.0.0"
+description = "Búsqueda, metaheurísticas y CSP para un rover autónomo"
+requires-python = ">=3.10"
+dependencies = []

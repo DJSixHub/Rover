@@ -1,0 +1,15 @@
+.venv/
+.vscode/
+__pycache__/
+*.py[cod]
+
+clases/
+Proyecto 1 - Rover.pdf
+recomendaciones.txt
+rover-*.pddl
+
+Informe rover.aux
+Informe rover.log
+Informe rover.out
+Informe rover.fdb_latexmk
+Informe rover.fls
